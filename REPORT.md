@@ -8,11 +8,16 @@ re-ranking layer, session-state accumulation, and empirically-tuned
 clarifying-question logic. No API calls, no model weights, no network
 dependency at inference time.
 
+See `DEMO.md` for a full turn-by-turn transcript of a real session
+(intent-override handling + non-repeating clarifying questions), generated
+by `generate_demo_transcript.py`.
+
 | Stage | HitRate@10 | MRR | MTTC | TechnicalScore |
 |---|---|---|---|---|
 | Organizer starter (weak BM25) | 0.125 | 0.068 | 9.81 | ~0.107 |
-| + session state, clarification, prioritization | — | — | — | 0.737 |
-| + RRF term-coverage re-ranking (final) | **0.890** | **0.543** | **3.51** | **0.758** |
+| + session state, clarification, prioritization | 0.865 | 0.532 | 3.77 | 0.737 |
+| + RRF term-coverage re-ranking | 0.890 | 0.543 | 3.51 | 0.758 |
+| + term-tier tuning (final) | **0.905** | **0.554** | **3.38** | **0.771** |
 
 Scores are from `python3 -m evaluator.local_evaluator` on the 200-session
 public set (`data/public_set.jsonl`), reproducing `results.json`.
@@ -21,10 +26,14 @@ Scenario breakdown (final):
 
 | Scenario | n | HitRate@10 | MRR | MTTC |
 |---|---|---|---|---|
-| Boundary | 10 | 0.900 | 0.639 | 3.40 |
-| Browsing | 80 | 0.888 | 0.552 | 3.51 |
-| Buying | 80 | 0.913 | 0.505 | 2.90 |
+| Boundary | 10 | 0.900 | 0.642 | 3.40 |
+| Browsing | 80 | 0.925 | 0.530 | 3.14 |
+| Buying | 80 | 0.913 | 0.554 | 2.95 |
 | Intent Override | 30 | 0.833 | 0.586 | 5.17 |
+
+Intent Override is unchanged by the latest tuning pass — those sessions
+already discard `learned_terms` on override, so the change that helped
+elsewhere doesn't touch them either way.
 
 ## 2. Architecture
 
@@ -48,12 +57,21 @@ BM25 OR-query only needs one term match to surface a candidate, which
 under-rewards candidates that match *more* of the distinct query terms. We
 compute a second ordering — term-coverage score, weighted by term
 reliability (disclosed constraint terms 3×, turn-1 category terms 1.5×,
-generic learned/profile terms 1×) and by which field the term appears in
-(mirroring the BM25 field weights) — then fuse the two orderings with
-**Reciprocal Rank Fusion** (`1/(k+rank_bm25) + 1/(k+rank_coverage)`, k=8,
-tuned by sweep). Because RRF re-orders the existing candidate pool rather
-than filtering it, hit-rate can only hold or improve, never regress from
-this stage — confirmed empirically (see §4).
+generic learned/profile terms **0×**, tuned by sweep — see §4) and by which
+field the term appears in (mirroring the BM25 field weights) — then fuse
+the two orderings with **Reciprocal Rank Fusion**
+(`1/(k+rank_bm25) + 1/(k+rank_coverage)`, k=8, tuned by sweep). Because RRF
+re-orders the existing candidate pool rather than filtering it, hit-rate
+can only hold or improve, never regress from this stage — confirmed
+empirically (see §4).
+
+Zeroing the generic-term tier doesn't erase genuinely disclosed
+constraints: `_term_tiers` takes a `max()` across tiers, so a term that
+appears in both `learned_terms` and `disclosed_terms` still gets the 3×
+disclosed weight. It only zeroes out terms that are *exclusively* in
+`learned_terms` — i.e. the profile-tag seeding from `reset()` (generic
+tags like "comfort"/"fit" that describe the customer's history, not
+necessarily this specific target).
 
 **Clarifying questions.** A fixed, empirically-tuned attribute order
 (`material, other, feature, color, style, use_case, size, budget, brand`)
@@ -84,11 +102,11 @@ every real turn of the 200-session public set — see repo for the script):
 
 | Metric | Value |
 |---|---|
-| Index build (one-time startup, 50k products) | 1.64 s |
-| `respond()` mean | 35.9 ms |
-| `respond()` median | 32.9 ms |
-| `respond()` p95 | 66.0 ms |
-| `respond()` p99 | 72.2 ms |
+| Index build (one-time startup, 50k products) | 1.69 s |
+| `respond()` mean | 37.0 ms |
+| `respond()` median | 33.0 ms |
+| `respond()` p95 | 67.0 ms |
+| `respond()` p99 | 82.9 ms |
 
 These are indicative (this machine, not the organizer's eval environment),
 but the shape of the claim is what matters: there is no network round-trip
@@ -96,15 +114,21 @@ to add on top, because there is no network call in the loop at all.
 
 ## 4. Engineering Process
 
-Six changes were built and evaluated against the local harness this cycle;
-two shipped, four were reverted after measurement. Recording the negative
-results here deliberately — they're evidence of the decision process, not
-just the outcome.
+Nine changes were built and evaluated against the local harness this
+cycle; two shipped, seven were reverted after measurement. Recording the
+negative results here deliberately — they're evidence of the decision
+process, not just the outcome.
 
 **Shipped:**
 - *RRF term-coverage re-ranking* (§2) — 0.737 → 0.758, tuned via a k-sweep
   (k=4..30) and pool-size sweep; k=8 with a 5×top_k candidate pool was the
   local optimum.
+- *Term-tier weight tuning* — 0.758 → 0.771. The coverage score's tier
+  weights (category/learned/disclosed) had been hand-picked when the
+  re-ranker was first built and never actually swept. A joint sweep found
+  zeroing the generic `learned_terms` tier (down from 1×) was a clean win
+  on every metric simultaneously — hit-rate, MRR, and MTTC all improved,
+  with Intent Override sessions unaffected either way (see §2 for why).
 
 **Tried, reverted (with measured cause):**
 - *Intent-weighted retrieval fusion* — shifting the RRF blend ratio toward
@@ -144,6 +168,24 @@ just the outcome.
   the intent card and never survives the `hard_constraints[:2]` /
   `soft_preferences[2:4]` slice — 0/178, empirically confirmed. No
   algorithm built on top of it could ever fire against this harness.
+- *IDF-weighted coverage scoring (blanket)* — used SQLite's `fts5vocab`
+  table to weight each matched term by real catalog-wide inverse document
+  frequency, on the theory that rare/distinctive terms should count for
+  more than common ones (motivated directly by the near-duplicate ranking
+  ceiling in §5). Regressed monotonically with weighting strength, down to
+  0.717 at full strength. Root cause: this catalog is a single narrow
+  domain (clothing/shoes/jewelry only), so the words that correctly anchor
+  category identity — "belt", "leather", "shirt" — are *necessarily*
+  common within it. Global IDF penalized exactly the category-anchoring
+  signal the tier weights exist to protect.
+- *IDF-weighted coverage scoring (scoped to disclosed terms)* — same idea,
+  scoped to skip `category_terms` so category anchoring couldn't be
+  diluted. Better than the blanket version but still never beat baseline
+  (flat-to-negative at every exponent tested, 0.757 best case). Even
+  customer-disclosed constraint terms (material/color names) are drawn
+  from a small, common, everyday descriptive vocabulary in this domain —
+  there's no real "rare but relevant term" phenomenon here for IDF to
+  exploit.
 
 ## 5. Limitations
 
@@ -164,9 +206,13 @@ just the outcome.
   `intent_card()` construction, not necessarily of the private evaluation
   set, which may use organizer-provided intent cards with different
   disclosure behavior. Not re-testable without private-set access.
-- **Current hit-rate ceiling is ~0.89**, not the 0.95 initially targeted.
-  Six independent, root-cause-diagnosed attempts to push past it (this
-  session) failed to clear it without regressing other sessions.
+- **Current hit-rate ceiling is 0.905**, not the 0.95 initially targeted.
+  Of nine independent, root-cause-diagnosed attempts to push past it this
+  cycle, one (term-tier tuning, §4) moved the ceiling; the other seven
+  regressed other sessions and were reverted. The pattern across all seven
+  failures points to a structural limit of keyword/BM25 matching on
+  near-duplicate products (§5) rather than a shortage of tuning ideas,
+  though more time would be needed to say that with full confidence.
 
 ## 6. Reproduction
 
@@ -181,5 +227,15 @@ agent itself.
 
 ## 7. Team Contributions
 
-*[TODO: fill in per-person contributions — retrieval/re-ranking, session
-state & clarification logic, evaluation/tuning, report/demo, etc.]*
+- **Ashley** — local evaluation and benchmarking; designed and compared
+  experiments; analyzed reverted approaches and failure cases; results and
+  performance documentation.
+- **Janson** — system integration and testing; reproducibility and final
+  validation; technical report and demo preparation; presentation
+  materials.
+- **Jia Xin** — session state and term tracking design; intent-override
+  handling; clarifying-question logic and stopping conditions; no-info
+  response handling.
+- **Ivy** — retrieval pipeline (SQLite FTS5/BM25); term-coverage scoring
+  and RRF re-ranking; RRF and candidate-pool parameter tuning; ranking
+  failure analysis.

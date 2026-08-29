@@ -37,6 +37,14 @@ FIELD_WEIGHTS = (
 )
 RRF_K = 8
 POOL_MULT = 5
+CATEGORY_TIER = 1.5
+# Generic learned/profile-tag terms get zero weight in coverage scoring --
+# swept 0.0-1.0, and any nonzero value let noisy profile-tag seeding (e.g.
+# "comfort", "fit" from user_profile) dilute the score. Note this doesn't
+# zero out genuinely disclosed constraints: a term in both learned_terms and
+# disclosed_terms still gets DISCLOSED_TIER via the max() in _term_tiers.
+LEARNED_TIER = 0.0
+DISCLOSED_TIER = 3.0
 
 
 def _text(value: object) -> str:
@@ -191,11 +199,11 @@ class Agent:
         # category context is next, generic profile-tag terms are weakest.
         tiers: dict[str, float] = {}
         for term in state.category_terms:
-            tiers[term] = max(tiers.get(term, 0.0), 1.5)
+            tiers[term] = max(tiers.get(term, 0.0), CATEGORY_TIER)
         for term in state.learned_terms:
-            tiers[term] = max(tiers.get(term, 0.0), 1.0)
+            tiers[term] = max(tiers.get(term, 0.0), LEARNED_TIER)
         for term in state.disclosed_terms:
-            tiers[term] = max(tiers.get(term, 0.0), 3.0)
+            tiers[term] = max(tiers.get(term, 0.0), DISCLOSED_TIER)
         return tiers
 
     def _coverage_rerank(self, bm25_pool: list[str], state: _SessionState, top_k: int) -> list[str]:
