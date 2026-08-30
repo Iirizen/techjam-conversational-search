@@ -1,6 +1,9 @@
 import statistics
+import sys
 import time
 import uuid
+
+sys.path.insert(0, ".")  # run from the repo root; scripts/ isn't on sys.path by default
 
 from evaluator import local_evaluator as ev
 from starter.agent import Agent
