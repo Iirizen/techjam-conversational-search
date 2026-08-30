@@ -1,7 +1,7 @@
 """Measure how far cheap deterministic retrieval gets you.
 
 Run from the repo root (needs the evaluator package importable):
-    python3 scratch/measure_ceiling.py
+    python3 scripts/measure_ceiling.py
 
 Reports:
   A. Category ceiling  - candidates left after filtering on the turn-1 category.
@@ -13,7 +13,10 @@ from __future__ import annotations
 
 import re
 import statistics
+import sys
 from collections import defaultdict
+
+sys.path.insert(0, ".")  # run from the repo root; scripts/ isn't on sys.path by default
 
 from evaluator.local_evaluator import (
     catalog_index,
@@ -58,7 +61,7 @@ bucket_sizes = sorted((len(v) for v in by_category.values()), reverse=True)
 print(f"  largest buckets: {bucket_sizes[:8]}")
 print(f"  singleton buckets: {sum(1 for n in bucket_sizes if n == 1)}\n")
 
-# ------------------------------------------------------ A. category ceiling
+# A. category ceiling
 print("=== A. CATEGORY CEILING ===")
 candidate_counts: list[int] = []
 for sample in samples:
@@ -79,7 +82,7 @@ elif median < 2000:
 else:
     print("  -> VERDICT: category alone is weak. Dense retrieval must be the backbone.")
 
-# ---------------------------------------------------- B. parse round-trip
+# B. parse round-trip
 print("\n=== B. PARSE ROUND-TRIP ===")
 OPENING = re.compile(r"^I'm looking for (.+?)(?:, but I'm still exploring\.|\. )")
 
@@ -106,7 +109,7 @@ if failures:
         print(f"    {truth!r} | {message!r}")
     print("  -> widen the regex before relying on it")
 
-# ------------------------------------------------- C. constraint power
+# C. constraint power
 print("\n=== C. CONSTRAINT POWER ===")
 print("  (how many products contain the first disclosed constraint verbatim)")
 

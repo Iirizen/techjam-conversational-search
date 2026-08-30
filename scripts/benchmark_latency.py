@@ -3,7 +3,7 @@ import sys
 import time
 import uuid
 
-sys.path.insert(0, ".")  # run from the repo root; scripts/ isn't on sys.path by default
+sys.path.insert(0, ".")  # run from the repo root, scripts/ isn't on sys.path by default
 
 from evaluator import local_evaluator as ev
 from starter.agent import Agent
@@ -11,12 +11,12 @@ from starter.agent import Agent
 samples = ev.load_jsonl("data/public_set.jsonl")
 catalog_ids, categories, products = ev.catalog_index("data/catalog.jsonl")
 
-# --- One-time startup cost: building the FTS5 index over the full catalog ---
+# One-time startup cost: building the FTS5 index over the full catalog
 start = time.perf_counter()
 agent = Agent("data/catalog.jsonl")
 startup_s = time.perf_counter() - start
 
-# --- Steady-state per-turn latency across every real session/turn ---
+# Steady-state per-turn latency across every real session/turn
 respond_latencies_ms: list[float] = []
 first_turn_latencies_ms: list[float] = []
 later_turn_latencies_ms: list[float] = []

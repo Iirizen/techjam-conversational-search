@@ -1,7 +1,7 @@
 """Inspect public_set.jsonl before committing to an architecture.
 
 Run from the repo root:
-    python3 scratch/inspect_dataset.py [path/to/public_set.jsonl]
+    python3 scripts/inspect_dataset.py [path/to/public_set.jsonl]
 
 Answers three questions:
   1. Do samples carry intent_card / behavior, or are they generated at runtime?
@@ -25,7 +25,7 @@ if not path.exists():
 samples = [json.loads(line) for line in path.open(encoding="utf-8") if line.strip()]
 print(f"sessions: {len(samples)}\n")
 
-# ---------------------------------------------------------------- keys present
+# keys present
 key_counts: Counter[str] = Counter()
 for sample in samples:
     key_counts.update(sample.keys())
@@ -34,7 +34,7 @@ print("top-level keys (sessions containing each):")
 for key, count in key_counts.most_common():
     print(f"  {key:20s} {count}")
 
-# ------------------------------------------------------------ gating question
+# gating question
 print("\n=== GATING QUESTION ===")
 with_card = sum("intent_card" in s for s in samples)
 with_behavior = sum("behavior" in s for s in samples)
@@ -51,18 +51,18 @@ elif with_card == len(samples):
 else:
     print("  -> Mixed. Your agent must handle both paths.")
 
-# --------------------------------------------------------------- scenario mix
+# scenario mix
 print("\nscenario distribution:")
 scenarios = Counter(s.get("scenario_type", "<missing>") for s in samples)
 for name, count in scenarios.most_common():
     print(f"  {name:18s} {count:4d}  ({count / len(samples):.0%})")
 
-# ------------------------------------------------------------ ground truth
+# ground truth
 missing_gt = [s.get("sample_id") for s in samples if "ground_truth" not in s]
 if missing_gt:
     print(f"\nWARNING: {len(missing_gt)} samples lack ground_truth")
 
-# -------------------------------------------------------------- user_profile
+# user_profile
 print("\nuser_profile keys across all sessions:")
 profile_keys: Counter[str] = Counter()
 non_dict = 0
@@ -81,13 +81,13 @@ print("\nfirst 3 user_profile values:")
 for sample in samples[:3]:
     print("  " + json.dumps(sample.get("user_profile"))[:400])
 
-# ------------------------------------------------- intent_card shape, if any
+# intent_card shape if there is any
 if with_card:
     print("\nfirst 3 intent_card values:")
     for sample in samples[:3]:
         if "intent_card" in sample:
             print("  " + json.dumps(sample["intent_card"])[:400])
 
-# ------------------------------------------------------------- full example
+# full example
 print("\n=== FULL FIRST SAMPLE ===")
 print(json.dumps(samples[0], indent=2)[:2500])

@@ -25,8 +25,7 @@ ATTRIBUTE_ORDER = [
     "material", "other", "feature", "color", "style", "use_case", "size", "budget", "brand",
 ]
 
-# Field weights mirror the bm25() column weights used for retrieval, so the
-# re-ranking coverage bonus stays consistent with what BM25 already rewards.
+# Field weights mirror the bm25() column weights used for retrieval, this makes the re-ranking coverage bonus stays consistent with what BM25 already rewards
 FIELD_WEIGHTS = (
     ("title", 6.0),
     ("categories", 4.0),
@@ -38,10 +37,10 @@ FIELD_WEIGHTS = (
 RRF_K = 8
 POOL_MULT = 5
 CATEGORY_TIER = 1.5
-# Generic learned/profile-tag terms get zero weight in coverage scoring --
-# swept 0.0-1.0, and any nonzero value let noisy profile-tag seeding (e.g.
-# "comfort", "fit" from user_profile) dilute the score. Note this doesn't
-# zero out genuinely disclosed constraints: a term in both learned_terms and
+# Generic learned/profile-tag terms get zero weight in coverage scoring
+# swept 0.0-1.0 and any nonzero value let noisy profile-tag seeding. For example,
+# "comfort", "fit" from user_profile, dilute the score. Also, this doesn't
+# zero out genuinely disclosed constraints like a term in both learned_terms and
 # disclosed_terms still gets DISCLOSED_TIER via the max() in _term_tiers.
 LEARNED_TIER = 0.0
 DISCLOSED_TIER = 3.0
