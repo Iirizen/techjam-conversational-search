@@ -66,7 +66,7 @@ python3 -m evaluator.local_evaluator
 This evaluates all 200 sessions in the public set and writes the final metrics to `results.json`. It should reproduce the numbers in the results table above exactly, because the agent is deterministic and repeated runs give identical output.
 
 ```bash
-python3 benchmark_latency.py
+python3 scripts/benchmark_latency.py
 ```
 
 This times `respond()` across every real turn of the public set and reports the mean, median, p95, and p99.
