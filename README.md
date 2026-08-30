@@ -1,6 +1,6 @@
 # TechJam 2026 Shopping Copilot
 
-This is our submission for the TikTok TechJam 2026 conversational search track. It is a shopping agent that holds a multi-turn conversation with a customer, asks clarifying questions along the way, keeps track of what has been said and returns a ranked list of ten candidate products on every turn.
+Our submission for the TikTok TechJam 2026 conversational search track is a shopping agent that holds a multi-turn conversation with a customer, asks clarifying questions along the way, keeps track of what has been said and returns a ranked list of ten candidate products on every turn.
 
 The whole thing is deterministic. It runs on SQLite FTS5 for retrieval, adds a term-coverage re-ranking layer of our own, accumulates session state across turns and decides what to ask next using logic we tuned empirically against the public set. There are no API calls anywhere in it, no model weights to load and nothing that needs a network connection at inference time.
 
@@ -89,7 +89,7 @@ Keeping these apart is what makes intent-override handling safe. When an overrid
 
 ### Re-ranking
 
-A BM25 OR-query will surface a candidate on the strength of a single term match, which means it under-rewards the candidates that match more of the distinct query terms. To correct for that we compute a second ordering from a term-coverage score. That score weights terms by how much we trust them, giving disclosed constraint terms triple weight, turn-one category terms one and a half times, and generic learned or profile terms zero weight. That last one used to sit at a single weight until we went back and swept it — turns out any nonzero weight there let noisy profile-tag seeding (things like "comfort" or "fit" carried over from the customer's purchase history) dilute the score, and zeroing it out was worth 0.758 to 0.771 on its own. It also weights by which field the term appeared in, mirroring the BM25 field weights. We then fuse the two orderings with Reciprocal Rank Fusion, `1/(k+rank_bm25) + 1/(k+rank_coverage)`, where we settled on k=8 after a sweep.
+A BM25 OR-query will surface a candidate on the strength of a single term match, which means it under-rewards the candidates that match more of the distinct query terms. To correct for that we compute a second ordering from a term-coverage score. That score weights terms by how much we trust them, giving disclosed constraint terms triple weight, turn-one category terms one and a half times, and generic learned or profile terms zero weight. That last one used to sit at a single weight until we went back and swept it and it turns out any nonzero weight there let noisy profile-tag seeding (things like "comfort" or "fit" carried over from the customer's purchase history) dilute the score and zeroing it out was worth 0.758 to 0.771 on its own. It also weights by which field the term appeared in, mirroring the BM25 field weights. We then fuse the two orderings with Reciprocal Rank Fusion, `1/(k+rank_bm25) + 1/(k+rank_coverage)`, where we settled on k=8 after a sweep.
 
 Since RRF re-orders the candidate pool rather than filtering it, recall over that pool is preserved by construction. Hit rate can still shift if a target happens to sit right at the `top_k` boundary, so rather than assume we were safe we went and checked, and hit rate either held or improved at every configuration we tried.
 
@@ -141,7 +141,7 @@ We built and measured seven changes against the local harness this cycle. Five o
 
 Our RRF term-coverage re-ranking took the score from 0.737 to 0.758. We found the configuration through two sweeps, one over the RRF constant k and one over how large a candidate pool to feed the re-ranker. The best result came from k=8 with a pool five times the size of `top_k` and that was the local optimum across everything we tried.
 
-The coverage score's tier weights had been hand-picked when we first built the re-ranker and never actually swept, so we went back and did that. Zeroing the generic learned-term tier came out on top by a clean margin, and it moved every metric at once: hit rate went from 0.890 to 0.905, MRR from 0.543 to 0.554, and MTTC dropped from 3.51 to 3.38, taking the overall score to 0.771. Zeroing that tier doesn't erase genuine disclosed constraints, since a term that shows up in both the learned and disclosed sets still gets the disclosed weight — the max across tiers wins. It only strips out terms that are exclusively generic profile-tag seeding. Intent Override sessions were untouched either way, since those already clear the learned-term set the moment an override fires.
+The coverage score's tier weights had been hand-picked when we first built the re-ranker and never actually swept, so we went back and did that. Zeroing the generic learned-term tier came out on top by a clean margin, and it moved every metric at once: hit rate went from 0.890 to 0.905, MRR from 0.543 to 0.554, and MTTC dropped from 3.51 to 3.38, taking the overall score to 0.771. Zeroing that tier doesn't erase genuine disclosed constraints, since a term that shows up in both the learned and disclosed sets still gets the disclosed weight and thus the max across tiers wins. It only strips out terms that are exclusively generic profile-tag seeding. Intent Override sessions were untouched either way, since those already clear the learned-term set the moment an override fires.
 
 ### What we reverted and why
 
@@ -163,7 +163,7 @@ The coverage score's tier weights had been hand-picked when we first built the r
 **Boilerplate noise filtering**
 
 - We tried skipping tokenization on template replies like "I don't have an additional preference for X", so that filler words such as *additional* and *specific* would stop polluting the query. It looked like an obvious bug fix. It regressed to 0.737.
-- It recovered none of the 22 misses we had aimed it at, because those same words show up in ordinary Amazon listing copy, in phrases like "Special Feature" and "Additional details", and were quietly carrying real signal for several borderline sessions sitting between rank 8 and rank 10.
+- It recovered none of the 22 misses we had aimed it at, because those same words show up in ordinary Amazon listing copy, in phrases like "Special Feature" and "Additional details" and were quietly carrying real signal for several borderline sessions sitting between rank 8 and rank 10.
 
 **Price and budget as a second retrieval route**
 
